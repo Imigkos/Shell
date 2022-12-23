@@ -1,4 +1,5 @@
 #include "header.h"
+#define BUFSIZE 1024
 
 char *user;
 
@@ -15,6 +16,19 @@ int main()
             printf("\n NOW EXITING SHELL");
             return 1;
         }
+
+        // uuuh strtok moment
+        char *cmd = strtok(input_array, " "); //tokenizes input stored in input_array using space, first word sotred in cmd
+        char *argv[BUFSIZE]; // array of individual words from input stored as arguments
+        int argc = 0; //number of arguments
+        while (cmd != NULL) {
+            argv[argc++] = cmd; // stored current value of cmd in argv and increments argc
+            cmd = strtok(NULL, " "); // calls strtok again to get next word, stores it in cmd
+        }
+        argv[argc] = NULL;
+
+        // Execute the command
+        execvp(argv[0], argv);
 
         printf("\nThats all there is for now ");
     }
@@ -33,16 +47,16 @@ void start_shell()
 
 void print_directory()
 {
-    char dir[1024];
+    char dir[BUFSIZE];
     getcwd(dir, sizeof(dir));
     fprintf(stderr, "%s@strahd:%s$ ",user, dir);
 }
 
 char* getInput()//read character until EOF or \n is reached and store in array
 {
-    int input_array_size = 1024;
+    //int input_array_size = 1024;
     int index = 0;
-    char *input_array = malloc(sizeof(char) * input_array_size);
+    char *input_array = malloc(sizeof(char) * BUFSIZE);
     int current;
 
     if (!input_array) //if error during allocation 
