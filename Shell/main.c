@@ -5,7 +5,7 @@ char *user;
 int main()
 {
     char *input_array;
-    char **parsed_input = malloc(BUFSIZ * sizeof(char));
+    char **parsed_input = malloc(BUFSIZE * sizeof(char));
     start_shell(); // initialize shell
     while (1)
     {
@@ -13,12 +13,12 @@ int main()
         input_array = getInput();
         if (strcasecmp(input_array, "exit") == 0)
         { // exit shell if user types exit
-            printf("\n NOW EXITING SHELL");
-            return 1;
+            printf("NOW EXITING SHELL...\n");
+            exit(0);
         }
 
-        parsed_input = parseInput(input_array);
-        execute_commands(parsed_input);
+        parsed_input = parseInput(input_array, &builtin);
+        execute_commands(parsed_input, builtin, file);
     }
 }
 
@@ -68,7 +68,7 @@ char *getInput() // read character until EOF or \n is reached and store in array
     }
 }
 
-char **parseInput(char *input)
+char **parseInput(char *input, int *builtin)
 {
 
     char *token = strtok(input, " "); // tokenizes input stored in input_array using space, first word sorted in token
@@ -83,6 +83,21 @@ char **parseInput(char *input)
     }
     while (token != NULL)
     {
+        if (strcmp(token, ">>") == 0)
+        {
+            *builtin = BUILTIN_APPEND;
+            break;
+        }
+        else if (strcmp(token, ">") == 0)
+        {
+            *builtin = BUILTIN_OVERWRITE;
+            break;
+        }
+        else if (strcmp(token, "|") == 0)
+        {
+            *builtin = BUILTIN_PIPE;
+            break;
+        }
         tokens[position++] = token;
         token = strtok(NULL, " ");
     }
@@ -93,35 +108,116 @@ char **parseInput(char *input)
     return tokens;
 }
 
-int execute_commands(char **parsed_input)
+int execute_commands(char **parsed_input, int builtin, char *file)
 {
+    int status;
+    pid_t pid;
 
-    if (strcmp(parsed_input[0], "cd") == 0)
+    // Handle append and overwrite built-in commands
+    if (builtin == BUILTIN_APPEND || builtin == BUILTIN_OVERWRITE)
     {
-        if (chdir(parsed_input[1]) != 0)
+        int flags = O_CREAT | O_WRONLY;
+        if (builtin == BUILTIN_APPEND)
         {
-            perror("");
-            
+            flags |= O_APPEND;
         }
-        return 1;
+        else
+        {
+            flags |= O_TRUNC;
+        }
+        int fd = open(file, flags, S_IRUSR | S_IWUSR | S_IRGRP | S_IWGRP | S_IROTH);
+        if (fd == -1)
+        {
+            perror("shell");
+            return -1;
+        }
+        dup2(fd, STDOUT_FILENO);
+        close(fd);
     }
 
-    pid_t pid = fork();
+    // Handle pipe built-in command
+    if (builtin == BUILTIN_PIPE)
+    {
+        // Split command and arguments into left and right sides of the pipe
+        char **left = parsed_input;
+        char **right = &parsed_input[position + 1];
+
+        // Create a pipe
+        int pipefd[2];
+        if (pipe(pipefd) == -1)
+        {
+            perror("shell");
+            return -1;
+        }
+        // cd command
+        if (strcmp(parsed_input[0], "cd") == 0)
+        {
+            if (chdir(parsed_input[1]) != 0)
+            {
+                perror("");
+            }
+            return 1;
+        }
+
+        // Fork a new process for the left side of the pipe
+        pid = fork();
+        if (pid < 0)
+        {
+            // Error forking
+            printf("Forking child failed\n");
+            return -1;
+        }
+        else if (pid == 0)
+        {
+            // Child process
+            close(pipefd[0]);
+            dup2(pipefd[1], STDOUT_FILENO);
+            close(pipefd[1]);
+
+            if (execvp(left[0], left) == -1)
+            {
+                perror("shell");
+            }
+            exit(EXIT_FAILURE);
+        }
+        else
+        {
+            // Parent process
+            close(pipefd[1]);
+            dup2(pipefd[0], STDIN_FILENO);
+            close(pipefd[0]);
+            if (execvp(right[0], right) == -1)
+            {
+                perror("shell");
+            }
+            exit(EXIT_FAILURE);
+        }
+    }
+    
+    // Handle all other commands
+    pid = fork();
     if (pid < 0)
     {
+        // Error forking
         printf("Forking child failed\n");
         return -1;
     }
     else if (pid == 0)
     {
-        if (execvp(parsed_input[0],parsed_input) == -1)
+        // Child process
+        if (execvp(parsed_input[0], parsed_input) == -1)
         {
             perror("shell");
         }
     }
     else
     {
-        waitpid(pid, NULL, 0);
+        // Parent process
+        //waitpid(pid, NULL, 0);
+        do
+        {
+            waitpid(pid, &status, WUNTRACED);
+        } while (!WIFEXITED(status) && !WIFSIGNALED(status));
     }
     return 1;
 }
