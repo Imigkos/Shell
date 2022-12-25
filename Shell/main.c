@@ -5,7 +5,7 @@ char *user;
 int main()
 {
     char *input_array;
-    char **parsed_input = malloc(BUFSIZE * sizeof(char));
+    char **parsed_input = malloc(BUFSIZ * sizeof(char));
     start_shell(); // initialize shell
     while (1)
     {
@@ -17,8 +17,8 @@ int main()
             exit(0);
         }
 
-        parsed_input = parseInput(input_array, &builtin);
-        execute_commands(parsed_input, builtin, file);
+        parsed_input = parseInput(input_array);
+        execute_commands(parsed_input);
     }
 }
 
@@ -68,10 +68,10 @@ char *getInput() // read character until EOF or \n is reached and store in array
     }
 }
 
-char **parseInput(char *input, int *builtin)
+char **parseInput(char *input)
 {
-
-    char *token = strtok(input, " "); // tokenizes input stored in input_array using space, first word sorted in token
+    int i;
+    // tokenizes input stored in input_array using space, first word sorted in token
     char **tokens = malloc(BUFSIZ * sizeof(char));
     // array of individual words from input stored as arguments
     int position = 0; // number of arguments
@@ -81,23 +81,21 @@ char **parseInput(char *input, int *builtin)
         fprintf(stderr, "shell: allocation error\n");
         exit(EXIT_FAILURE);
     }
+
+    for (i = 0; i < strlen(input); i++)
+    {
+
+        if (input[i] == '|')
+        {
+            parsePipes(input);
+            return NULL;
+        }
+    }
+    char *token = strtok(input, " ");
+
     while (token != NULL)
     {
-        if (strcmp(token, ">>") == 0)
-        {
-            *builtin = BUILTIN_APPEND;
-            break;
-        }
-        else if (strcmp(token, ">") == 0)
-        {
-            *builtin = BUILTIN_OVERWRITE;
-            break;
-        }
-        else if (strcmp(token, "|") == 0)
-        {
-            *builtin = BUILTIN_PIPE;
-            break;
-        }
+
         tokens[position++] = token;
         token = strtok(NULL, " ");
     }
@@ -108,103 +106,31 @@ char **parseInput(char *input, int *builtin)
     return tokens;
 }
 
-int execute_commands(char **parsed_input, int builtin, char *file)
+int execute_commands(char **parsed_input)
 {
-    int status;
-    pid_t pid;
 
-    // Handle append and overwrite built-in commands
-    if (builtin == BUILTIN_APPEND || builtin == BUILTIN_OVERWRITE)
-    {
-        int flags = O_CREAT | O_WRONLY;
-        if (builtin == BUILTIN_APPEND)
-        {
-            flags |= O_APPEND;
-        }
-        else
-        {
-            flags |= O_TRUNC;
-        }
-        int fd = open(file, flags, S_IRUSR | S_IWUSR | S_IRGRP | S_IWGRP | S_IROTH);
-        if (fd == -1)
-        {
-            perror("shell");
-            return -1;
-        }
-        dup2(fd, STDOUT_FILENO);
-        close(fd);
+    if (parsed_input == NULL)
+    { // pipe has already been executed so return
+        return 0;
     }
 
-    // Handle pipe built-in command
-    if (builtin == BUILTIN_PIPE)
+    if (strcmp(parsed_input[0], "cd") == 0)
     {
-        // Split command and arguments into left and right sides of the pipe
-        char **left = parsed_input;
-        char **right = &parsed_input[position + 1];
-
-        // Create a pipe
-        int pipefd[2];
-        if (pipe(pipefd) == -1)
+        if (chdir(parsed_input[1]) != 0)
         {
-            perror("shell");
-            return -1;
+            perror("");
         }
-        // cd command
-        if (strcmp(parsed_input[0], "cd") == 0)
-        {
-            if (chdir(parsed_input[1]) != 0)
-            {
-                perror("");
-            }
-            return 1;
-        }
-
-        // Fork a new process for the left side of the pipe
-        pid = fork();
-        if (pid < 0)
-        {
-            // Error forking
-            printf("Forking child failed\n");
-            return -1;
-        }
-        else if (pid == 0)
-        {
-            // Child process
-            close(pipefd[0]);
-            dup2(pipefd[1], STDOUT_FILENO);
-            close(pipefd[1]);
-
-            if (execvp(left[0], left) == -1)
-            {
-                perror("shell");
-            }
-            exit(EXIT_FAILURE);
-        }
-        else
-        {
-            // Parent process
-            close(pipefd[1]);
-            dup2(pipefd[0], STDIN_FILENO);
-            close(pipefd[0]);
-            if (execvp(right[0], right) == -1)
-            {
-                perror("shell");
-            }
-            exit(EXIT_FAILURE);
-        }
+        return 1;
     }
-    
-    // Handle all other commands
-    pid = fork();
+
+    pid_t pid = fork();
     if (pid < 0)
     {
-        // Error forking
         printf("Forking child failed\n");
         return -1;
     }
     else if (pid == 0)
     {
-        // Child process
         if (execvp(parsed_input[0], parsed_input) == -1)
         {
             perror("shell");
@@ -212,12 +138,100 @@ int execute_commands(char **parsed_input, int builtin, char *file)
     }
     else
     {
-        // Parent process
-        //waitpid(pid, NULL, 0);
-        do
-        {
-            waitpid(pid, &status, WUNTRACED);
-        } while (!WIFEXITED(status) && !WIFSIGNALED(status));
+        waitpid(pid, NULL, 0);
     }
     return 1;
+}
+
+void parsePipes(char *input)
+{
+    int pipe_counter = 0;
+    char *buffer;
+    int found_pipe = 0;
+    command *command_arr = malloc(sizeof(command) * BUFSIZ);
+
+    // char *token = strtok(input, "|");
+
+    buffer = strtok(input, " ");
+    while (buffer != NULL)
+    {
+        if (strcmp(buffer, "|") == 0)
+        {
+            buffer = strtok(NULL, " ");
+            found_pipe = 1;
+        }
+        else
+        {
+            command_arr[pipe_counter].arguments = malloc(sizeof(char)*BUFSIZE);
+            command_arr[pipe_counter].cmd = buffer;
+            buffer = strtok(NULL, " ");
+            command_arr[pipe_counter].arguments[0] = buffer;
+            pipe_counter++;
+            found_pipe = 0;
+        }
+        if (!found_pipe)
+        {
+            buffer = strtok(NULL, " ");
+        }
+        
+    }
+    executePipes(command_arr);
+}
+
+void executePipes(command *commandArray)
+{
+execvp(commandArray[0].cmd, commandArray[0].arguments);
+
+    int fd[2];
+    pid_t pid, p2;
+    if (pipe(fd) < 0)
+    {
+        printf("\nError while initializing pipe");
+        return;
+    }
+    pid = fork();
+    if (pid < 0)
+    {
+        printf("\n Failed forking child");
+    }
+
+    if (pid == 0)
+    {
+        close(fd[0]);
+        dup2(fd[1], STDOUT_FILENO);
+        close(fd[1]);
+
+        if (execvp(commandArray[0].cmd, commandArray[0].arguments)<0)
+        {
+            printf("\nERRRRRORRRRRR");
+            exit(0);
+        }
+    }
+    else
+    {
+        p2 = fork();
+
+        if (p2 < 0)
+        {
+            printf("\nFORK FAIL");
+            return;
+        }
+
+        if (p2 == 0)
+        {
+            close(fd[1]);
+            dup2(fd[0], STDIN_FILENO);
+            close(fd[0]);
+            if (execvp(commandArray[1].cmd, commandArray[1].arguments)<0)
+            {
+                printf("\nERRRRRORRRRRR");
+                exit(0);
+            }
+            else
+            {
+                wait(NULL);
+                wait(NULL);
+            }
+        }
+    }
 }
