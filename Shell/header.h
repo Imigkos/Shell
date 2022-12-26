@@ -11,15 +11,14 @@
 #define BUFSIZE 1024
 
 typedef struct command{
-   char* cmd;
    char** arguments;
 } command;
 
 void start_shell();
 void print_directory();
 char* getInput();
-char** parseInput(char *input);
-int execute_commands(char **parsed_input);
+command *parseInput(char *input);
+int execute_commands(command *parsed_input);
 void parsePipes(char* input);
 void executePipes(command *commandArray);
 

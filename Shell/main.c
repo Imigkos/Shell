@@ -5,7 +5,7 @@ char *user;
 int main()
 {
     char *input_array;
-    char **parsed_input = malloc(BUFSIZ * sizeof(char));
+    command *parsed_input = malloc(BUFSIZ * sizeof(char));
     start_shell(); // initialize shell
     while (1)
     {
@@ -29,7 +29,6 @@ void start_shell()
     printf("\n===========SHELL OPENED===========\n");
     user = getenv("USER"); // get username
     fprintf(stderr, "         Welcome %s\n", user);
-    sleep(1);
 }
 
 void print_directory()
@@ -68,19 +67,16 @@ char *getInput() // read character until EOF or \n is reached and store in array
     }
 }
 
-char **parseInput(char *input)
+ command *parseInput(char *input)
 {
     int i;
     // tokenizes input stored in input_array using space, first word sorted in token
-    char **tokens = malloc(BUFSIZ * sizeof(char));
+    command *command_arr = malloc(sizeof(command)*BUFSIZE);
+    command_arr[0].arguments = malloc(sizeof(char)*BUFSIZE);
     // array of individual words from input stored as arguments
     int position = 0; // number of arguments
 
-    if (!tokens)
-    {
-        fprintf(stderr, "shell: allocation error\n");
-        exit(EXIT_FAILURE);
-    }
+    
 
     for (i = 0; i < strlen(input); i++)
     {
@@ -96,17 +92,17 @@ char **parseInput(char *input)
     while (token != NULL)
     {
 
-        tokens[position++] = token;
+        command_arr[0].arguments[position++] = token;
         token = strtok(NULL, " ");
     }
 
     token = strtok(NULL, " ");
 
-    tokens[position] = NULL;
-    return tokens;
+    command_arr[0].arguments[position] = NULL;
+    return command_arr;
 }
 
-int execute_commands(char **parsed_input)
+int execute_commands(command *parsed_input)
 {
 
     if (parsed_input == NULL)
@@ -114,9 +110,9 @@ int execute_commands(char **parsed_input)
         return 0;
     }
 
-    if (strcmp(parsed_input[0], "cd") == 0)
+    if (strcmp(parsed_input[0].arguments[0], "cd") == 0)
     {
-        if (chdir(parsed_input[1]) != 0)
+        if (chdir(parsed_input[0].arguments[1]) != 0)
         {
             perror("");
         }
@@ -131,7 +127,7 @@ int execute_commands(char **parsed_input)
     }
     else if (pid == 0)
     {
-        if (execvp(parsed_input[0], parsed_input) == -1)
+        if (execvp(parsed_input[0].arguments[0], parsed_input[0].arguments) == -1)
         {
             perror("shell");
         }
@@ -148,9 +144,8 @@ void parsePipes(char *input)
     int pipe_counter = 0;
     char *buffer;
     int found_pipe = 0;
+    int argc;
     command *command_arr = malloc(sizeof(command) * BUFSIZ);
-
-    // char *token = strtok(input, "|");
 
     buffer = strtok(input, " ");
     while (buffer != NULL)
@@ -162,10 +157,16 @@ void parsePipes(char *input)
         }
         else
         {
-            command_arr[pipe_counter].arguments = malloc(sizeof(char)*BUFSIZE);
-            command_arr[pipe_counter].cmd = buffer;
+            argc = 0;
+            command_arr[pipe_counter].arguments = malloc(sizeof(char) * BUFSIZ);
+            command_arr[pipe_counter].arguments[argc++] = buffer;
             buffer = strtok(NULL, " ");
-            command_arr[pipe_counter].arguments[0] = buffer;
+            while (buffer != NULL && strcmp(buffer, "|") != 0)
+            {
+                command_arr[pipe_counter].arguments[argc] = buffer;
+                argc++;
+                buffer = strtok(NULL, " ");
+            }
             pipe_counter++;
             found_pipe = 0;
         }
@@ -173,17 +174,23 @@ void parsePipes(char *input)
         {
             buffer = strtok(NULL, " ");
         }
-        
     }
+    command_arr[pipe_counter].arguments = malloc(sizeof(char) * BUFSIZ);
+    command_arr[pipe_counter].arguments[0] = NULL;
+
     executePipes(command_arr);
 }
 
 void executePipes(command *commandArray)
 {
-execvp(commandArray[0].cmd, commandArray[0].arguments);
+
+    // if (execvp(commandArray[1].cmd, commandArray[1].arguments) == -1)
+    // {
+    //     perror("shell: ");
+    // }
 
     int fd[2];
-    pid_t pid, p2;
+    pid_t pid, pid2;
     if (pipe(fd) < 0)
     {
         printf("\nError while initializing pipe");
@@ -197,11 +204,12 @@ execvp(commandArray[0].cmd, commandArray[0].arguments);
 
     if (pid == 0)
     {
-        close(fd[0]);
         dup2(fd[1], STDOUT_FILENO);
-        close(fd[1]);
+        close(fd[0]);
 
-        if (execvp(commandArray[0].cmd, commandArray[0].arguments)<0)
+        // close(fd[1]);
+
+        if (execvp(commandArray[0].arguments[0], commandArray[0].arguments) < 0)
         {
             printf("\nERRRRRORRRRRR");
             exit(0);
@@ -209,29 +217,27 @@ execvp(commandArray[0].cmd, commandArray[0].arguments);
     }
     else
     {
-        p2 = fork();
-
-        if (p2 < 0)
+        pid2 = fork();
+        if (pid2 < 0)
         {
-            printf("\nFORK FAIL");
-            return;
+            printf("\n Failed while creating second fork");
         }
-
-        if (p2 == 0)
+        if (pid2 == 0)
         {
-            close(fd[1]);
+
             dup2(fd[0], STDIN_FILENO);
-            close(fd[0]);
-            if (execvp(commandArray[1].cmd, commandArray[1].arguments)<0)
+            close(fd[1]);
+
+            if (execvp(commandArray[1].arguments[0], commandArray[1].arguments) < 0)
             {
                 printf("\nERRRRRORRRRRR");
                 exit(0);
             }
-            else
-            {
-                wait(NULL);
-                wait(NULL);
-            }
+        }
+        else
+        {
+            wait(NULL);
+            wait(NULL);
         }
     }
 }
