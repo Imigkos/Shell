@@ -164,9 +164,11 @@ void parsePipes(char *input)
             command_arr[pipe_counter].arguments = malloc(sizeof(char) * BUFSIZ);
             command_arr[pipe_counter].arguments[argc++] = buffer;
             buffer = strtok(NULL, " ");
-            while (strcmp(buffer, "|") != 0)
+            while (buffer!=NULL && strcmp(buffer, "|" ) != 0)
             {
-                command_arr[pipe_counter].arguments[argc++] = buffer;
+                command_arr[pipe_counter].arguments[argc] = buffer;
+                argc++;
+                buffer = strtok(NULL, " ");
             }
             pipe_counter++;
             found_pipe = 0;
