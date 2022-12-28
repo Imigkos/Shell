@@ -17,8 +17,8 @@ typedef struct command{
 void start_shell();
 void print_directory();
 char* getInput();
-char** parseInput(char *input);
+command *parseInput(char *input);
 int execute_commands(char **parsed_input);
-void parsePipes(char* input);
+void parsePipes(char* input,int found_redirect);
 void executePipes(command *commandArray);
 

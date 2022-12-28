@@ -5,7 +5,7 @@ char *user;
 int main()
 {
     char *input_array;
-    char **parsed_input = malloc(BUFSIZ * sizeof(char));
+    command *parsed_input = malloc(BUFSIZ * sizeof(char));
     start_shell(); // initialize shell
     while (1)
     {
@@ -18,7 +18,14 @@ int main()
         }
 
         parsed_input = parseInput(input_array);
-        execute_commands(parsed_input);
+        if (parsed_input != NULL)
+        {
+            execute_commands(parsed_input[0].arguments);
+        }
+        free(parsed_input);
+        parsed_input = NULL;
+        free(input_array);
+        input_array = NULL;
     }
 }
 
@@ -35,7 +42,7 @@ void print_directory()
 {
     char dir[1024];
     getcwd(dir, sizeof(dir));
-    fprintf(stderr, "\n%s@strahd:%s$ ", user, dir);
+    fprintf(stderr, "%s@strahd:%s$ ", user, dir);
 }
 
 char *getInput() // read character until EOF or \n is reached and store in array
@@ -67,51 +74,76 @@ char *getInput() // read character until EOF or \n is reached and store in array
     }
 }
 
-char **parseInput(char *input)
+command *parseInput(char *input)
 {
     int i;
-    // tokenizes input stored in input_array using space, first word sorted in token
-    char **tokens = malloc(BUFSIZ * sizeof(char));
-    // array of individual words from input stored as arguments
-    int position = 0; // number of arguments
 
-    if (!tokens)
-    {
-        fprintf(stderr, "shell: allocation error\n");
-        exit(EXIT_FAILURE);
-    }
+    command *command_arr = malloc(sizeof(command) * BUFSIZE); // array of commands
+                                                              // array of arguments for each command
+
+    int position = 0;
+    int command_count = 0;
+    command_arr[command_count].arguments = malloc(sizeof(char) * BUFSIZE);
+    int found_pipe = 0;
+    int found_redirect = 0;
 
     for (i = 0; i < strlen(input); i++)
-    {
-
+    {                                        // command_arr[0]          ca[0]   ca[1]
+        if (input[i] == input[i + 1] && input[i] == '>') // ls -l >> fucker.txt     ls | head -3 > output.txt       sort -r < lmao.txt | wc
+        {
+            found_redirect = 1;
+        }
         if (input[i] == '|')
         {
-            parsePipes(input);
-            return NULL;
+            found_pipe = 1;
         }
+        if (input[i] == '>' && input[i - 1] != '>' && input[i + 1] == ' ')
+        {
+            found_redirect = 2;
+        }
+        if (input[i] == '<')
+        {
+            found_redirect = 3;
+        }
+        
     }
-    char *token = strtok(input, " ");
+
+    if (found_pipe == 1)
+    {
+        parsePipes(input,found_redirect);
+        return NULL;
+    }
+
+    switch (found_redirect)
+    {
+    case 1:
+        char delimiter[] = ">>" ;
+        char *buffer = strtok(input,delimiter);
+        char *file = strtok(NULL," ");
+        break;
+    
+    default:
+        break;
+    }
+
+
+    char * token = strtok(input, " ");
 
     while (token != NULL)
     {
 
-        tokens[position++] = token;
+        command_arr[command_count].arguments[position++] = token;
         token = strtok(NULL, " ");
     }
 
     token = strtok(NULL, " ");
 
-    tokens[position] = NULL;
-    return tokens;
+    command_arr[command_count].arguments[position] = NULL;
+    return command_arr;
 }
 
 int execute_commands(char **parsed_input)
 {
-
-    if (parsed_input == NULL)
-    { // pipe has already been executed so return
-        return 0;
-    }
 
     if (strcmp(parsed_input[0], "cd") == 0)
     {
@@ -123,6 +155,7 @@ int execute_commands(char **parsed_input)
     }
 
     pid_t pid = fork();
+
     if (pid < 0)
     {
         printf("Forking child failed\n");
@@ -130,19 +163,22 @@ int execute_commands(char **parsed_input)
     }
     else if (pid == 0)
     {
+
         if (execvp(parsed_input[0], parsed_input) == -1)
         {
             perror("shell");
+            return -1;
         }
     }
     else
     {
         waitpid(pid, NULL, 0);
     }
+    free(parsed_input);
     return 1;
 }
 
-void parsePipes(char *input)
+void parsePipes(char *input, int found_redirect)
 {
     int pipe_counter = 0;
     char *buffer;
@@ -164,7 +200,7 @@ void parsePipes(char *input)
             command_arr[pipe_counter].arguments = malloc(sizeof(char) * BUFSIZ);
             command_arr[pipe_counter].arguments[argc++] = buffer;
             buffer = strtok(NULL, " ");
-            while (buffer!=NULL && strcmp(buffer, "|" ) != 0)
+            while (buffer != NULL && strcmp(buffer, "|") != 0)
             {
                 command_arr[pipe_counter].arguments[argc] = buffer;
                 argc++;
@@ -182,56 +218,54 @@ void parsePipes(char *input)
     command_arr[pipe_counter].arguments[0] = NULL;
 
     executePipes(command_arr);
+    free(command_arr);
+    command_arr = NULL;
 }
 
 void executePipes(command *commandArray)
 {
-
-    // if (execvp(commandArray[1].cmd, commandArray[1].arguments) == -1)
-    // {
-    //     perror("shell: ");
-    // }
-
     int fd[2];
-    pid_t pid;
+    pid_t p1;
+    int out;
+
     if (pipe(fd) < 0)
     {
         printf("\nError while initializing pipe");
         return;
     }
-    pid = fork();
-    if (pid < 0)
+    p1 = fork();
+
+    if (p1 < 0)
     {
         printf("\n Failed forking child");
     }
 
-    if (pid == 0)
+    if (p1 == 0)
     {
-        dup2(fd[1], STDOUT_FILENO);
+        out = dup(STDOUT_FILENO);
         close(fd[0]);
+        dup2(fd[1], STDOUT_FILENO);
 
-        // close(fd[1]);
-
-        if (execvp(commandArray[0].arguments[0], commandArray[0].arguments) < 0)
+        if (execute_commands(commandArray[0].arguments) < 0)
         {
             printf("\nERRRRRORRRRRR");
             exit(0);
         }
+
+        close(fd[1]);
+        dup2(out, STDOUT_FILENO);
+        close(out);
     }
     else
     {
-        dup2(fd[0], STDIN_FILENO);
         close(fd[1]);
+        dup2(fd[0], STDIN_FILENO);
 
-        if (execvp(commandArray[1].arguments[0], commandArray[1].arguments) < 0)
+        if (execute_commands(commandArray[1].arguments) < 0)
         {
             printf("\nERRRRRORRRRRR");
             exit(0);
         }
-        else
-        {
-            wait(NULL);
-            wait(NULL);
-        }
+        waitpid(p1, NULL, 0);
     }
 }
