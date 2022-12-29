@@ -88,7 +88,7 @@ command *parseInput(char *input)
     int found_redirect = 0;
 
     for (i = 0; i < strlen(input); i++)
-    {                                        // command_arr[0]          ca[0]   ca[1]
+    {                                                    // command_arr[0]          ca[0]   ca[1]
         if (input[i] == input[i + 1] && input[i] == '>') // ls -l >> fucker.txt     ls | head -3 > output.txt       sort -r < lmao.txt | wc
         {
             found_redirect = 1;
@@ -105,29 +105,33 @@ command *parseInput(char *input)
         {
             found_redirect = 3;
         }
-        
     }
 
     if (found_pipe == 1)
     {
-        parsePipes(input,found_redirect);
+        parsePipes(input, found_redirect);
         return NULL;
     }
 
     switch (found_redirect)
     {
     case 1:
-        char delimiter[] = ">>" ;
-        char *buffer = strtok(input,delimiter);
-        char *file = strtok(NULL," ");
+        char *buffer = strtok(input, ">>"); // parse command
+        buffer[strlen(buffer) - 1] = '\0';  // cut trailing whitespace
+        char *file = strtok(NULL, ">> ");   // parse filename
+        redirectOutput(file, buffer,O_WRONLY | O_CREAT | O_APPEND);
+        return NULL;
         break;
-    
-    default:
+    case 2:
+        buffer = strtok(input, ">");
+        buffer[strlen(buffer) - 1] = '\0';
+        file = strtok(NULL, "> ");
+        redirectOutput(file, buffer,O_WRONLY | O_CREAT | O_TRUNC);
+        return NULL;
         break;
     }
 
-
-    char * token = strtok(input, " ");
+    char *token = strtok(input, " ");
 
     while (token != NULL)
     {
@@ -269,3 +273,31 @@ void executePipes(command *commandArray)
         waitpid(p1, NULL, 0);
     }
 }
+
+int redirectOutput(char *filename, char *buffer,int flags)
+{
+    command *commandArray;
+    int output;
+    int out = open(filename,flags, 0600);
+
+    if (out < 0)
+    {
+        fprintf(stderr, "Error opening file\n");
+        return 1;
+    }
+
+    output = dup(STDOUT_FILENO);
+    if (dup2(out, STDOUT_FILENO)<0){
+        fprintf(stderr,"LMAOOO");
+        return 1;
+    }
+
+    commandArray = parseInput(buffer);
+    execute_commands(commandArray[0].arguments);
+    fflush(stdout);
+
+    close(out);
+    dup2(output, STDOUT_FILENO);
+    close(output);
+}
+

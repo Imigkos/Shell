@@ -4,6 +4,7 @@
 #include<unistd.h>
 #include <sys/types.h>
 #include <sys/wait.h>
+#include <fcntl.h>
 
 
 
@@ -21,4 +22,5 @@ command *parseInput(char *input);
 int execute_commands(char **parsed_input);
 void parsePipes(char* input,int found_redirect);
 void executePipes(command *commandArray);
+int redirectOutput(char *filename,char *buffer,int flags);
 
