@@ -76,6 +76,7 @@ char *getInput() // read character until EOF or \n is reached and store in array
 
 command *parseInput(char *input)
 {
+
     int i;
 
     command *command_arr = malloc(sizeof(command) * BUFSIZE); // array of commands
@@ -88,8 +89,8 @@ command *parseInput(char *input)
     int found_redirect = 0;
 
     for (i = 0; i < strlen(input); i++)
-    {                                                    // command_arr[0]          ca[0]   ca[1]
-        if (input[i] == input[i + 1] && input[i] == '>') // ls -l >> fucker.txt     ls | head -3 > output.txt       sort -r < lmao.txt | wc
+    { // command_arr[0]          ca[0]   ca[1]
+        if (input[i] == input[i + 1] && input[i] == '>')
         {
             found_redirect = 1;
         }
@@ -107,28 +108,34 @@ command *parseInput(char *input)
         }
     }
 
-    if (found_pipe == 1)
-    {
-        parsePipes(input, found_redirect);
-        return NULL;
-    }
-
     switch (found_redirect)
     {
     case 1:
         char *buffer = strtok(input, ">>"); // parse command
         buffer[strlen(buffer) - 1] = '\0';  // cut trailing whitespace
         char *file = strtok(NULL, ">> ");   // parse filename
-        redirectOutput(file, buffer,O_WRONLY | O_CREAT | O_APPEND);
+        redirectOutput(file, buffer, O_WRONLY | O_CREAT | O_APPEND);
         return NULL;
         break;
     case 2:
         buffer = strtok(input, ">");
         buffer[strlen(buffer) - 1] = '\0';
         file = strtok(NULL, "> ");
-        redirectOutput(file, buffer,O_WRONLY | O_CREAT | O_TRUNC);
+        redirectOutput(file, buffer, O_WRONLY | O_CREAT | O_TRUNC);
+        return NULL;
+    case 3:
+        buffer = strtok(input, "<");
+        buffer[strlen(buffer) - 1] = '\0';
+        file = strtok(NULL, "< ");
+        redirectInput(file, buffer);
         return NULL;
         break;
+    }
+
+    if (found_pipe == 1)
+    {
+        parsePipes(input);
+        return NULL;
     }
 
     char *token = strtok(input, " ");
@@ -179,10 +186,11 @@ int execute_commands(char **parsed_input)
         waitpid(pid, NULL, 0);
     }
     free(parsed_input);
+    parsed_input = NULL;
     return 1;
 }
 
-void parsePipes(char *input, int found_redirect)
+void parsePipes(char *input)
 {
     int pipe_counter = 0;
     char *buffer;
@@ -274,11 +282,11 @@ void executePipes(command *commandArray)
     }
 }
 
-int redirectOutput(char *filename, char *buffer,int flags)
+int redirectOutput(char *filename, char *buffer, int flags)
 {
     command *commandArray;
     int output;
-    int out = open(filename,flags, 0600);
+    int out = open(filename, flags, 0600);
 
     if (out < 0)
     {
@@ -287,13 +295,17 @@ int redirectOutput(char *filename, char *buffer,int flags)
     }
 
     output = dup(STDOUT_FILENO);
-    if (dup2(out, STDOUT_FILENO)<0){
-        fprintf(stderr,"LMAOOO");
+    if (dup2(out, STDOUT_FILENO) < 0)
+    {
+        fprintf(stderr, "Error redirecting\n");
         return 1;
     }
 
     commandArray = parseInput(buffer);
-    execute_commands(commandArray[0].arguments);
+    if (commandArray != NULL)
+    {
+        execute_commands(commandArray[0].arguments);
+    }
     fflush(stdout);
 
     close(out);
@@ -301,3 +313,26 @@ int redirectOutput(char *filename, char *buffer,int flags)
     close(output);
 }
 
+int redirectInput(char *filename, char *buffer)
+{
+    command *commandArray;
+    int in = open(filename, O_RDONLY);
+
+    if (in < 0)
+    {
+        fprintf(stderr, "Error opening file\n");
+        return -1;
+    }
+
+    dup2(in, 0);
+
+    commandArray = parseInput(buffer);
+    if (commandArray != NULL)
+    {
+        execute_commands(commandArray[0].arguments);
+    }
+    fflush(stdin);
+
+    close(in);
+    return 1;
+}

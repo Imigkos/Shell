@@ -1,0 +1,4 @@
+-rwxrwxr-x 1 zedit zedit 27488 Δεκ  30 16:35 main
+-rw-rw-r-- 1 zedit zedit  7763 Δεκ  30 16:36 main.c
+-rwxrwxr-x 1 zedit zedit 27496 Δεκ  30 16:38 main
+-rw-rw-r-- 1 zedit zedit  7763 Δεκ  30 16:36 main.c
