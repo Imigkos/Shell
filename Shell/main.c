@@ -5,12 +5,16 @@ char *user;
 int main()
 {
     char *input_array;
-    command *parsed_input = malloc(BUFSIZ * sizeof(char));
+    command *parsed_input;
     start_shell(); // initialize shell
     while (1)
     {
         print_directory();
         input_array = getInput();
+        if (input_array == NULL)
+        {
+            break;
+        }
         if (strcasecmp(input_array, "exit") == 0)
         { // exit shell if user types exit
             printf("NOW EXITING SHELL...\n");
@@ -45,37 +49,30 @@ void print_directory()
     fprintf(stderr, "%s@strahd:%s$ ", user, dir);
 }
 
-char *getInput() // read character until EOF or \n is reached and store in array
+char *getInput(void)
 {
-    int input_array_size = 1024;
-    int index = 0;
-    char *input_array = malloc(sizeof(char) * input_array_size);
-    int current;
-
-    if (!input_array) // if error during allocation
+    char *input = NULL;
+    size_t capacity = 0;
+    ssize_t length = getline(&input, &capacity, stdin);
+    if (length < 0)
     {
-        fprintf(stderr, "Error when creating input array\n");
-        exit(0);
+        free(input);
+        return NULL;
     }
-
-    while (1)
+    if (length > 0 && input[length - 1] == '\n')
     {
-        current = getchar();
-        if (current == '\n' || current == EOF) // put trailing newline after EOF
-        {
-            input_array[index] = '\0';
-            return input_array;
-        }
-        else // store current character in array
-        {
-            input_array[index] = current;
-        }
-        index++;
+        input[length - 1] = '\0';
     }
+    return input;
 }
 
 command *parseInput(char *input)
 {
+    if (input[strspn(input, " \t")] == '\0')
+    {
+        return NULL;
+    }
+
 
     int i;
 
@@ -84,7 +81,7 @@ command *parseInput(char *input)
 
     int position = 0;
     int command_count = 0;
-    command_arr[command_count].arguments = malloc(sizeof(char) * BUFSIZE);
+    command_arr[command_count].arguments = calloc(BUFSIZE, sizeof(char *));
     int found_pipe = 0;
     int found_redirect = 0;
 
@@ -98,7 +95,7 @@ command *parseInput(char *input)
         {
             found_pipe = 1;
         }
-        if (input[i] == '>' && input[i - 1] != '>' && input[i + 1] == ' ')
+        if (input[i] == '>' && (i == 0 || input[i - 1] != '>') && input[i + 1] == ' ')
         {
             found_redirect = 2;
         }
@@ -178,7 +175,7 @@ int execute_commands(char **parsed_input)
         if (execvp(parsed_input[0], parsed_input) == -1)
         {
             perror("shell");
-            return -1;
+            _exit(127);
         }
     }
     else
@@ -209,7 +206,7 @@ void parsePipes(char *input)
         else
         {
             argc = 0;
-            command_arr[pipe_counter].arguments = malloc(sizeof(char) * BUFSIZ);
+            command_arr[pipe_counter].arguments = calloc(BUFSIZ, sizeof(char *));
             command_arr[pipe_counter].arguments[argc++] = buffer;
             buffer = strtok(NULL, " ");
             while (buffer != NULL && strcmp(buffer, "|") != 0)
@@ -226,7 +223,7 @@ void parsePipes(char *input)
             buffer = strtok(NULL, " ");
         }
     }
-    command_arr[pipe_counter].arguments = malloc(sizeof(char) * BUFSIZ);
+    command_arr[pipe_counter].arguments = calloc(BUFSIZ, sizeof(char *));
     command_arr[pipe_counter].arguments[0] = NULL;
 
     executePipes(command_arr);
